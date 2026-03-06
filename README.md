@@ -16,13 +16,44 @@ It solves a simple problem: standardized export, import, and verification of a t
 
 An OpenClaw agent's usable state is more than just code or config. It includes:
 
-- **Workspace** (AGENTS.md, SOUL.md, TOOLS.md, skills, etc.)
-- **Provider configuration** (API keys, model preferences)
-- **Channel configuration** (Telegram, Slack, Discord, etc.)
-- **State & memory** (session history, vector databases)
-- **Credentials and runtime info**
+```
+┌─────────────────────────────────────────────────────┐
+│              OpenClaw Agent Instance                 │
+│                                                     │
+│  ┌─────────────┐       ┌────────────────────────┐   │
+│  │  Workspace  │       │  Provider Config       │   │
+│  │  AGENTS.md  │       │  API keys, model prefs │   │
+│  │  SOUL.md    │       └────────────────────────┘   │
+│  │  TOOLS.md   │                                    │
+│  │  skills/    │       ┌────────────────────────┐   │
+│  └─────────────┘       │  Channel Config        │   │
+│                        │  Telegram / Slack /     │   │
+│  ┌─────────────┐       │  Discord               │   │
+│  │  State &    │       └────────────────────────┘   │
+│  │  Memory     │                                    │
+│  │  sessions   │       ┌────────────────────────┐   │
+│  │  vector DBs │       │  Credentials &         │   │
+│  └─────────────┘       │  Runtime Info          │   │
+│                        └────────────────────────┘   │
+└─────────────────────────────────────────────────────┘
+```
 
-Docker can distribute the runtime environment, but it can't express "which parts are templates, which are state, and which need rebinding." ClawPack fills that gap.
+Docker can distribute the runtime environment, but it can't express "which parts are templates, which are state, and which need rebinding." ClawPack fills that gap:
+
+```
+                 Docker                          ClawPack
+            ┌─────────────┐               ┌──────────────────┐
+            │  OS + deps  │               │  template vs     │
+            │  runtime    │               │  state vs        │
+            │  binaries   │               │  credentials     │
+            └─────────────┘               │  ─────────────── │
+                                          │  risk detection  │
+           Distributes the                │  selective export│
+           "how to run"                   └──────────────────┘
+
+                                          Distributes the
+                                          "what the agent is"
+```
 
 ## Install
 
@@ -33,6 +64,19 @@ npm install -g clawpack
 Requires Node.js >= 20.
 
 ## Quick Start
+
+The four commands form a linear workflow:
+
+```
+  Machine A                                          Machine B
+ ┌────────────────────────────────────┐    ┌─────────────────────────────┐
+ │                                    │    │                             │
+ │  ① inspect ──▶ ② export           │    │  ③ import ──▶ ④ verify     │
+ │     scan          pack to          │    │     unpack        check    │
+ │     & report      .clawpack  ──────┼───▶│     & restore     struct  │
+ │                                    │    │                             │
+ └────────────────────────────────────┘    └─────────────────────────────┘
+```
 
 ```bash
 # 1. Inspect an OpenClaw instance
@@ -54,6 +98,16 @@ clawpack verify
 
 Scan an OpenClaw instance, report its structure, sensitive data, and recommended export type.
 
+```
+ ~/.openclaw/
+ ├── config/
+ ├── workspace/         clawpack inspect
+ ├── state/          ─────────────────────▶   Report:
+ ├── .env                                     - structure overview
+ └── ...                                      - sensitive data found
+                                              - recommended pack type
+```
+
 ```bash
 clawpack inspect                  # auto-detect ~/.openclaw
 clawpack inspect -p /path/to/dir  # custom path
@@ -63,6 +117,19 @@ clawpack inspect -f json          # JSON output
 ### `clawpack export`
 
 Export an instance as a `.clawpack` package.
+
+```
+ ~/.openclaw/                                my-agent.clawpack
+ ├── config/          clawpack export        (gzipped tar)
+ ├── workspace/    ─────────────────────▶    ┌──────────────┐
+ ├── state/           -t template            │ manifest.json│
+ ├── .env             -o my-agent.clawpack   │ config/      │
+ └── ...                                     │ workspace/   │
+                       ▲                     │ reports/     │
+                       │                     └──────────────┘
+                 secrets excluded
+                 (template mode)
+```
 
 ```bash
 clawpack export -t template       # template pack (excludes secrets)
@@ -75,6 +142,16 @@ clawpack export -p /path/to/dir   # custom source path
 
 Import a `.clawpack` package into a target environment.
 
+```
+ my-agent.clawpack                          ~/.openclaw/
+ ┌──────────────┐    clawpack import        ├── config/
+ │ manifest.json│  ─────────────────────▶   ├── workspace/
+ │ config/      │    -t ~/.openclaw         ├── state/
+ │ workspace/   │                           └── ...
+ │ state/       │
+ └──────────────┘
+```
+
 ```bash
 clawpack import my-agent.clawpack              # restore to ~/.openclaw
 clawpack import my-agent.clawpack -t ./target  # custom target
@@ -84,12 +161,42 @@ clawpack import my-agent.clawpack -t ./target  # custom target
 
 Verify an imported instance is structurally complete and usable.
 
+```
+ ~/.openclaw/
+ ├── config/  ✓        clawpack verify
+ ├── workspace/  ✓   ─────────────────▶   All checks passed  ✓
+ ├── AGENTS.md  ✓                          - directories exist
+ └── state/  ✓                             - manifest valid
+                                           - workspace intact
+```
+
 ```bash
 clawpack verify                  # verify ~/.openclaw
 clawpack verify -p /path/to/dir  # custom path
 ```
 
 ## Package Types
+
+```
+                          .clawpack
+                        ┌───────────┐
+                        │           │
+                ┌───────┴───┐ ┌────┴──────┐
+                │ template  │ │ instance  │
+                └─────┬─────┘ └─────┬─────┘
+                      │             │
+          ┌───────────┴──┐  ┌──────┴───────────────┐
+          │ Workspace    │  │ Workspace             │
+          │ Safe config  │  │ Full config           │
+          │              │  │ State & sessions      │
+          │ ✗ secrets    │  │ Credentials & .env    │
+          │ ✗ sessions   │  │                       │
+          │ ✗ .env       │  │                       │
+          └──────────────┘  └──────────────────────┘
+                │                     │
+          safe-share           trusted-migration-only
+         (share publicly)     (trusted environments only)
+```
 
 | Type | Use Case | Includes | Risk Level |
 |------|----------|----------|------------|
@@ -103,14 +210,39 @@ Template packs automatically exclude credentials, sessions, memory databases, an
 A `.clawpack` file is a gzipped tar archive containing:
 
 ```
-manifest.json       # Pack metadata (schema version, type, risk level, etc.)
-config/             # Configuration files
-workspace/          # Agent workspace (AGENTS.md, SOUL.md, skills, etc.)
-state/              # Session and credential data (instance packs only)
-reports/            # Export report
+my-agent.clawpack (gzipped tar)
+│
+├── manifest.json ─── Pack metadata
+│                     ├── schema version
+│                     ├── pack type (template / instance)
+│                     └── risk level
+│
+├── config/ ───────── Configuration files
+│
+├── workspace/ ────── Agent workspace
+│                     ├── AGENTS.md
+│                     ├── SOUL.md
+│                     └── skills/
+│
+├── state/ ────────── Session & credential data
+│                     (instance packs only)
+│
+└── reports/ ──────── Export report
 ```
 
 ## Risk Levels
+
+```
+  safe-share              internal-only           trusted-migration-only
+ ┌──────────────┐       ┌──────────────┐        ┌──────────────┐
+ │  No secrets  │       │  Non-critical │        │  Credentials │
+ │  No state    │       │  config only  │        │  State data  │
+ │              │       │              │        │  Sessions    │
+ │  Safe to     │       │  Team-only   │        │  Trusted env │
+ │  distribute  │       │  sharing     │        │  only        │
+ └──────────────┘       └──────────────┘        └──────────────┘
+    Low risk ◀──────────────────────────────────────▶ High risk
+```
 
 | Level | Description |
 |-------|-------------|
@@ -121,6 +253,18 @@ reports/            # Export report
 ## Output Formats
 
 All commands support `-f text` (default, human-readable) and `-f json` (machine-readable).
+
+```
+ clawpack inspect -f text          clawpack inspect -f json
+ ┌─────────────────────┐           ┌──────────────────────┐
+ │  === Scan Report === │           │ {                    │
+ │  Path: ~/.openclaw   │           │   "path": "~/.oc..", │
+ │  Files: 42           │           │   "files": 42,       │
+ │  Risk: safe-share    │           │   "risk": "safe-sh.."│
+ └─────────────────────┘           │ }                    │
+    human-readable                 └──────────────────────┘
+                                      machine-readable
+```
 
 ```bash
 clawpack inspect -f json | jq '.riskAssessment'
@@ -134,6 +278,25 @@ cd clawpack
 npm install
 npm run build
 npm test
+```
+
+### Project Structure
+
+```
+src/
+├── cli.ts ─────────── Entry point (commander, 4 commands)
+├── commands/
+│   ├── inspect.ts ─── Scan & report
+│   ├── export.ts ──── Export to .clawpack
+│   ├── import.ts ──── Import from .clawpack
+│   └── verify.ts ──── Structural verification
+├── core/
+│   ├── scanner.ts ─── Instance detection, sensitive data scan
+│   ├── packer.ts ──── Pack/unpack logic, exclusion rules
+│   ├── verifier.ts ── Integrity checks
+│   └── types.ts ───── Shared types & constants
+└── utils/
+    └── output.ts ──── Output formatting (text / json)
 ```
 
 ## License
