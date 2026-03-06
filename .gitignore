@@ -3,3 +3,21 @@ dist/
 *.clawpack
 .clawpack-staging/
 .clawpack-import-*/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Environment
+.env
+.env.*
+
+# Coverage
+coverage/

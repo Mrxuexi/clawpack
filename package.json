@@ -7,13 +7,37 @@
   "bin": {
     "clawpack": "dist/cli.js"
   },
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
     "start": "node dist/cli.js",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "prepublishOnly": "npm run build && npm test"
   },
+  "keywords": [
+    "openclaw",
+    "agent",
+    "packaging",
+    "distribution",
+    "cli",
+    "ai-agent",
+    "llm"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Mrxuexi/clawpack.git"
+  },
+  "homepage": "https://github.com/Mrxuexi/clawpack#readme",
+  "bugs": {
+    "url": "https://github.com/Mrxuexi/clawpack/issues"
+  },
+  "author": "Mrxuexi",
   "engines": {
     "node": ">=20.0.0"
   },
